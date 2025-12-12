@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Realtime Shared Typing</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 2rem;
+        max-width: 600px;
+        margin: auto;
+      }
+      textarea {
+        width: 100%;
+        height: 300px;
+        font-size: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Shared Realtime Typing Board</h2>
+    <p>Anything you type here appears instantly for all users.</p>
+
+    <textarea id="textArea"></textarea>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const textArea = document.getElementById("textArea");
+
+      // initialize with existing text
+      socket.on("initialize", (text) => {
+        textArea.value = text;
+      });
+
+      // update from other users
+      socket.on("textUpdate", (newText) => {
+        textArea.value = newText;
+      });
+
+      // send updates on input
+      textArea.addEventListener("input", () => {
+        socket.emit("textUpdate", textArea.value);
+      });
+    </script>
+  </body>
+</html>

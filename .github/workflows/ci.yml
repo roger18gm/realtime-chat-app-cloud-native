@@ -1,0 +1,34 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: realtime-chat-app
+        run: npm ci
+
+      - name: Run tests
+        working-directory: realtime-chat-app
+        run: npm test
+
+      - name: Run coverage
+        working-directory: realtime-chat-app
+        run: npm run test:coverage
+
+      - name: Build Docker image (no push)
+        working-directory: realtime-chat-app
+        run: docker build -t realtime-chat-app:test .

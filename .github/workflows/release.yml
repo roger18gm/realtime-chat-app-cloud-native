@@ -54,3 +54,17 @@ jobs:
       - name: Show application URL
         working-directory: infrastructure
         run: terraform output public_dns
+
+      - name: Get EC2 public DNS
+        id: tf-output
+        working-directory: infrastructure
+        run: |
+          echo "APP_URL=http://$(terraform output -raw public_dns)" >> $GITHUB_ENV
+
+      - name: Wait for application to start
+        run: sleep 20
+
+      - name: Smoke test application
+        run: |
+          echo "Testing $APP_URL"
+          curl --fail $APP_URL

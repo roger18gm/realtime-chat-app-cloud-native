@@ -1,4 +1,11 @@
 terraform {
+  backend "s3" {
+    bucket         = "itm350-realtime-chat-app-tf-state"
+    key            = "realtime-chat-app/terraform.tfstate"
+    region         = "us-west-2"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
   required_providers {
     aws = {
       source  = "hashicorp/aws"

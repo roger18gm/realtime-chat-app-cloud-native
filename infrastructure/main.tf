@@ -3,7 +3,7 @@ terraform {
     bucket         = "itm350-realtime-chat-app-tf-state"
     key            = "realtime-chat-app/terraform.tfstate"
     region         = "us-west-2"
-    use_lockfile = "terraform-locks"
+    use_lockfile   = true
     encrypt        = true
   }
   required_providers {

@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 const { authenticateSocket } = require("../middleware/socketAuth.js");
 const {
+    getOrCreateRoom,
     addUserToRoom,
     removeUserFromRoom,
     getUsersInRoom,
@@ -18,42 +19,51 @@ function setupSockets(server) {
     io.on("connection", (socket) => {
         console.log(`Connected - User ID: ${socket.userId}, Guest: ${socket.isGuest}`);
 
-        // Handle room:join event
-        socket.on("room:join", (roomId) => {
-            // Leave previous room if any
-            if (socket.currentRoom) {
-                socket.leave(socket.currentRoom);
-                const prevRoom = removeUserFromRoom(socket.currentRoom, socket.userId);
-                if (prevRoom) {
-                    io.to(socket.currentRoom).emit("room:user-left", {
-                        userId: socket.userId,
-                        displayName: socket.userId,
-                        userCount: getUserCountInRoom(socket.currentRoom),
-                    });
+        // Handle room:join event (async to support DynamoDB reads)
+        socket.on("room:join", async (roomId, callback) => {
+            try {
+                // Leave previous room if any
+                if (socket.currentRoom) {
+                    socket.leave(socket.currentRoom);
+                    const prevRoom = removeUserFromRoom(socket.currentRoom, socket.userId);
+                    if (prevRoom) {
+                        io.to(socket.currentRoom).emit("room:user-left", {
+                            userId: socket.userId,
+                            displayName: socket.userId,
+                            userCount: getUserCountInRoom(socket.currentRoom),
+                        });
+                    }
                 }
+
+                // Get or create room (may read from DynamoDB)
+                const room = await getOrCreateRoom(roomId);
+
+                // Join new room
+                socket.currentRoom = roomId;
+                socket.join(roomId);
+                addUserToRoom(roomId, socket.userId, socket.userId, socket.isGuest);
+
+                // Send current users in room to the joining user
+                const usersInRoom = getUsersInRoom(roomId);
+                socket.emit("room:users", {
+                    roomId,
+                    users: usersInRoom,
+                    userCount: usersInRoom.length,
+                });
+
+                // Notify others in room
+                socket.to(roomId).emit("room:user-joined", {
+                    userId: socket.userId,
+                    displayName: socket.userId,
+                    userCount: getUserCountInRoom(roomId),
+                });
+
+                console.log(`User ${socket.userId} joined room ${roomId}`);
+                if (callback) callback({ success: true });
+            } catch (error) {
+                console.error(`Error joining room ${roomId}: ${error.message}`);
+                if (callback) callback({ success: false, error: error.message });
             }
-
-            // Join new room
-            socket.currentRoom = roomId;
-            socket.join(roomId);
-            addUserToRoom(roomId, socket.userId, socket.userId, socket.isGuest);
-
-            // Send current users in room to the joining user
-            const usersInRoom = getUsersInRoom(roomId);
-            socket.emit("room:users", {
-                roomId,
-                users: usersInRoom,
-                userCount: usersInRoom.length,
-            });
-
-            // Notify others in room
-            socket.to(roomId).emit("room:user-joined", {
-                userId: socket.userId,
-                displayName: socket.userId,
-                userCount: getUserCountInRoom(roomId),
-            });
-
-            console.log(`User ${socket.userId} joined room ${roomId}`);
         });
 
         // Handle room:leave event

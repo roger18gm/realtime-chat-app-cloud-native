@@ -19,3 +19,15 @@ variable "docker_image" {
 variable "docker_tag" {
   type = string
 }
+
+variable "use_lab_role" {
+  description = "Use pre-existing AWS Academy Learner Lab LabRole instead of creating a new role"
+  type        = bool
+  default     = true
+}
+
+variable "lab_instance_profile_name" {
+  description = "Name of the pre-existing LabInstanceProfile (for AWS Academy Learner Lab)"
+  type        = string
+  default     = "LabInstanceProfile"
+}

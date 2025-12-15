@@ -12,6 +12,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.515.0",
+    "@aws-sdk/util-dynamodb": "^3.515.0",
     "express": "^5.2.1",
     "socket.io": "^4.8.1"
   },

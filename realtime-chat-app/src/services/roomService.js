@@ -1,8 +1,12 @@
 /**
  * Room Management Service
  * Handles room creation, membership, and presence tracking
- * All data is stored in memory (ephemeral by design)
+ * 
+ * Rooms are stored in memory (ephemeral by design for presence)
+ * Room metadata can be supplemented from DynamoDB if available
  */
+
+const { getRoomMetadata } = require("./dynamoDbService.js");
 
 const rooms = new Map();
 
@@ -12,20 +16,32 @@ const rooms = new Map();
  *   roomId: string,
  *   name: string,
  *   users: Map<userId, { userId, displayName, isGuest }>,
- *   createdAt: timestamp
+ *   createdAt: timestamp,
+ *   allowedGroups?: string[] (from DynamoDB metadata)
  * }
  */
 
 /**
  * Get or create a room
+ * Attempts to read metadata from DynamoDB if available
  */
-function getOrCreateRoom(roomId, name = null) {
+async function getOrCreateRoom(roomId, name = null) {
     if (!rooms.has(roomId)) {
+        // Try to get metadata from DynamoDB
+        let dbMetadata = null;
+        try {
+            dbMetadata = await getRoomMetadata(roomId);
+        } catch (error) {
+            // Silently continue if DynamoDB read fails
+            console.warn(`Could not fetch room metadata for ${roomId}: ${error.message}`);
+        }
+
         rooms.set(roomId, {
             roomId,
-            name: name || roomId,
+            name: dbMetadata?.name || name || roomId,
             users: new Map(),
-            createdAt: Date.now(),
+            createdAt: dbMetadata?.createdAt || Date.now(),
+            allowedGroups: dbMetadata?.allowedGroups,
         });
     }
     return rooms.get(roomId);
@@ -35,7 +51,11 @@ function getOrCreateRoom(roomId, name = null) {
  * Add user to room
  */
 function addUserToRoom(roomId, userId, displayName, isGuest) {
-    const room = getOrCreateRoom(roomId);
+    const room = rooms.get(roomId);
+    if (!room) {
+        // Room doesn't exist yet - this shouldn't happen in normal flow
+        return null;
+    }
     room.users.set(userId, {
         userId,
         displayName,

@@ -58,6 +58,8 @@ resource "aws_instance" "app" {
     docker_tag   = var.docker_tag
   })
 
+  user_data_replace_on_change = true
+
   tags = {
     Name = var.project_name
   }

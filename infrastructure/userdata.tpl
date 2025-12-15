@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Log deployment version (forces Terraform diff)
+echo "Deploying version ${docker_tag}" > /etc/realtime-chat-app-version
+
 apt-get update -y
 apt-get install -y docker.io
 

@@ -1,12 +1,16 @@
 const { Server } = require("socket.io");
+const { authenticateSocket } = require("../middleware/socketAuth.js");
 
 let sharedText = ""; // state all clients share
 
 function setupSockets(server) {
     const io = new Server(server);
 
+    // Apply socket authentication middleware
+    io.use(authenticateSocket);
+
     io.on("connection", (socket) => {
-        console.log("A user connected:", socket.id);
+        console.log(`Connected - User ID: ${socket.userId}, Guest: ${socket.isGuest}`);
 
         // send the current text to the newly connected client
         socket.emit("initialize", sharedText);
@@ -18,7 +22,7 @@ function setupSockets(server) {
         });
 
         socket.on("disconnect", () => {
-            console.log("User disconnected:", socket.id);
+            console.log(`Disconnected - User ID: ${socket.userId}`);
         });
     });
 

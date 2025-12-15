@@ -67,4 +67,13 @@ jobs:
       - name: Smoke test application
         run: |
           echo "Testing $APP_URL"
-          curl --fail $APP_URL
+          for i in {1..10}; do
+            if curl --fail http://$APP_URL/health; then
+              echo "Application is up!"
+              exit 0
+            fi
+            echo "Waiting for application..."
+            sleep 15
+          done
+          echo "Application failed to start"
+          exit 1

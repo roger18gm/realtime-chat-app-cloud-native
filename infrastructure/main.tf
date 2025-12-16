@@ -251,8 +251,24 @@ resource "null_resource" "update_cognito_callbacks" {
   depends_on = [aws_instance.app, aws_cognito_user_pool_client.web]
 
   provisioner "local-exec" {
-    command = "aws cognito-idp update-user-pool-client --user-pool-id ${aws_cognito_user_pool.main.id} --client-id ${aws_cognito_user_pool_client.web.id} --callback-urls http://localhost:8080 http://localhost:3000 http://localhost http://${aws_instance.app.public_ip} http://${aws_instance.app.public_dns} --logout-urls http://localhost:8080 http://localhost:3000 http://localhost http://${aws_instance.app.public_ip} http://${aws_instance.app.public_dns} --region ${var.aws_region}"
-    interpreter = ["PowerShell", "-Command"]
+    command = <<-EOT
+      aws cognito-idp update-user-pool-client \
+        --user-pool-id ${aws_cognito_user_pool.main.id} \
+        --client-id ${aws_cognito_user_pool_client.web.id} \
+        --callback-urls \
+          http://localhost:8080 \
+          http://localhost:3000 \
+          http://localhost \
+          http://${aws_instance.app.public_ip} \
+          http://${aws_instance.app.public_dns} \
+        --logout-urls \
+          http://localhost:8080 \
+          http://localhost:3000 \
+          http://localhost \
+          http://${aws_instance.app.public_ip} \
+          http://${aws_instance.app.public_dns} \
+        --region ${var.aws_region}
+    EOT
   }
 }
 

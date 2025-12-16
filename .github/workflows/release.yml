@@ -55,11 +55,11 @@ jobs:
         working-directory: infrastructure
         run: terraform output public_dns
 
-      - name: Get EC2 public DNS
+      - name: Get ALB DNS name
         id: tf-output
         working-directory: infrastructure
         run: |
-          echo "APP_URL=http://$(terraform output -raw public_dns)" >> $GITHUB_ENV
+          echo "APP_URL=https://$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
       - name: Wait for application to start
         run: sleep 20
@@ -68,7 +68,7 @@ jobs:
         run: |
           echo "Testing $APP_URL"
           for i in {1..10}; do
-            if curl --fail $APP_URL/health; then
+            if curl --insecure --fail $APP_URL/health; then
               echo "Application is up!"
               exit 0
             fi

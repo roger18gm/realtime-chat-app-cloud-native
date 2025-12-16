@@ -17,7 +17,7 @@ docker rm realtime-chat-app || true
 docker run -d \
   --name realtime-chat-app \
   --restart unless-stopped \
-  -p 80:8080 \
+  -p 8080:8080 \
   -e ENFORCE_AUTH=true \
   -e COGNITO_USER_POOL_ID=${cognito_user_pool_id} \
   -e COGNITO_CLIENT_ID=${cognito_client_id} \

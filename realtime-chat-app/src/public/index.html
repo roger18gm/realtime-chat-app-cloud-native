@@ -74,6 +74,10 @@
         background-color: #ecf0f1;
         border-radius: 4px;
       }
+      .message.history {
+        opacity: 0.8;
+        background-color: #dfe6e9;
+      }
       .message.system {
         background-color: #fff9e6;
         font-style: italic;
@@ -181,6 +185,16 @@
         userCountDisplay.textContent = data.userCount;
       });
 
+      // Handle message history
+      socket.on("room:history", (data) => {
+        // Add historical messages to the display
+        if (data.messages && data.messages.length > 0) {
+          data.messages.forEach((message) => {
+            addMessage(message.displayName, message.content, true);
+          });
+        }
+      });
+
       // Handle user joined
       socket.on("room:user-joined", (data) => {
         addSystemMessage(
@@ -250,9 +264,9 @@
         }
       }
 
-      function addMessage(user, content) {
+      function addMessage(user, content, isHistory = false) {
         const messageEl = document.createElement("div");
-        messageEl.className = "message";
+        messageEl.className = "message" + (isHistory ? " history" : "");
         messageEl.innerHTML = `
           <div class="message-user">${user}</div>
           <div class="message-content">${escapeHtml(content)}</div>

@@ -34,12 +34,31 @@ app.get("/health", (req, res) => {
 
 // Cognito login endpoint (redirects to Hosted UI)
 app.get("/login", (req, res) => {
-    const redirectUri = getBaseUrl(req);
+    const baseUrl = getBaseUrl(req);
+    const callbackUri = new URL("/callback", baseUrl).toString();
     const cognitoLoginUrl = `https://${COGNITO_DOMAIN}.auth.${COGNITO_REGION}.amazoncognito.com/login?` +
         `client_id=${COGNITO_CLIENT_ID}&` +
         `response_type=code&` +
-        `redirect_uri=${encodeURIComponent(redirectUri)}`;
+        `redirect_uri=${encodeURIComponent(callbackUri)}`;
     res.redirect(cognitoLoginUrl);
+});
+
+// OAuth callback endpoint (Cognito redirects here with authorization code)
+app.get("/callback", async (req, res) => {
+    const { code, error } = req.query;
+
+    if (error) {
+        return res.status(400).send(`Authentication error: ${error}`);
+    }
+
+    if (!code) {
+        return res.status(400).send("Missing authorization code");
+    }
+
+    // For now, just redirect to home with code as token (client will use this)
+    // In a production app, you would exchange the code for tokens on the backend
+    // For this simplified flow, we let the client handle the token exchange
+    res.redirect(`/?token=${encodeURIComponent(code)}`);
 });
 
 // Cognito logout endpoint

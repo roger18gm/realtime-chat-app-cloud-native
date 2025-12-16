@@ -120,10 +120,82 @@
         font-style: italic;
         margin-top: 0.5rem;
       }
+      .auth-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        z-index: 1000;
+      }
+      .auth-container.show {
+        display: flex;
+      }
+      .auth-box {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        text-align: center;
+      }
+      .auth-box h1 {
+        margin-top: 0;
+        color: #2c3e50;
+      }
+      .auth-btn {
+        display: inline-block;
+        padding: 0.75rem 2rem;
+        margin: 0.5rem;
+        background-color: #3498db;
+        color: white;
+        text-decoration: none;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      .auth-btn:hover {
+        background-color: #2980b9;
+      }
+      .auth-btn.logout {
+        background-color: #e74c3c;
+      }
+      .auth-btn.logout:hover {
+        background-color: #c0392b;
+      }
+      .user-info {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: white;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        color: #2c3e50;
+      }
+      .user-info .logout-btn {
+        margin-left: 0.5rem;
+      }
     </style>
   </head>
   <body>
-    <div class="container">
+    <!-- Authentication screen -->
+    <div class="auth-container" id="authContainer">
+      <div class="auth-box">
+        <h1>Realtime Chat</h1>
+        <p>Sign in to access the chat</p>
+        <a href="/login" class="auth-btn">Sign In with Cognito</a>
+      </div>
+    </div>
+
+    <!-- Main chat interface -->
+    <div class="container" id="chatContainer" style="display: none">
+      <div class="user-info" id="userInfo"></div>
       <div class="sidebar">
         <h3>Rooms</h3>
         <button class="room-btn active" data-room="general">general</button>
@@ -157,148 +229,252 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      const socket = io();
-      const messagesDiv = document.getElementById("messages");
-      const messageInput = document.getElementById("messageInput");
-      const sendBtn = document.getElementById("sendBtn");
-      const currentRoomDisplay = document.getElementById("currentRoom");
-      const userCountDisplay = document.getElementById("userCount");
-      const typingIndicatorDiv = document.getElementById("typingIndicator");
-      const roomBtns = document.querySelectorAll(".room-btn");
+      // ===== Authentication Management =====
 
-      let currentRoom = "general";
-      let typingUsers = new Set();
-      let typingTimeout;
+      let authToken = null;
+      let currentUser = null;
 
-      // Join default room on connect
-      socket.on("connect", () => {
-        socket.emit("room:join", currentRoom);
-      });
+      /**
+       * Extract token from URL query parameters (after Cognito redirect)
+       */
+      function getTokenFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("token") || localStorage.getItem("authToken");
+      }
 
-      // Handle room join
-      socket.on("room:users", (data) => {
-        messagesDiv.innerHTML = "";
-        typingUsers.clear();
-        typingIndicatorDiv.textContent = "";
-        currentRoom = data.roomId;
-        currentRoomDisplay.textContent = currentRoom;
-        userCountDisplay.textContent = data.userCount;
-      });
-
-      // Handle message history
-      socket.on("room:history", (data) => {
-        // Add historical messages to the display
-        if (data.messages && data.messages.length > 0) {
-          data.messages.forEach((message) => {
-            addMessage(message.displayName, message.content, true);
+      /**
+       * Fetch user info from /api/auth/me endpoint
+       */
+      async function fetchUserInfo(token) {
+        try {
+          const response = await fetch("/api/auth/me", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           });
-        }
-      });
-
-      // Handle user joined
-      socket.on("room:user-joined", (data) => {
-        addSystemMessage(
-          `${data.displayName} joined (${data.userCount} online)`
-        );
-        userCountDisplay.textContent = data.userCount;
-      });
-
-      // Handle user left
-      socket.on("room:user-left", (data) => {
-        addSystemMessage(`${data.displayName} left (${data.userCount} online)`);
-        userCountDisplay.textContent = data.userCount;
-      });
-
-      // Handle new message
-      socket.on("message:new", (message) => {
-        addMessage(message.displayName, message.content);
-        typingUsers.delete(message.userId);
-        updateTypingIndicator();
-      });
-
-      // Handle typing started
-      socket.on("typing:started", (data) => {
-        typingUsers.add(data.userId);
-        updateTypingIndicator();
-      });
-
-      // Handle typing stopped
-      socket.on("typing:stopped", (data) => {
-        typingUsers.delete(data.userId);
-        updateTypingIndicator();
-      });
-
-      // Room button clicks
-      roomBtns.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const roomId = btn.dataset.room;
-          socket.emit("room:leave", currentRoom);
-          socket.emit("room:join", roomId);
-
-          roomBtns.forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-        });
-      });
-
-      // Send message
-      sendBtn.addEventListener("click", sendMessage);
-      messageInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") sendMessage();
-      });
-
-      // Typing indicators
-      messageInput.addEventListener("input", () => {
-        socket.emit("typing:start");
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-          socket.emit("typing:stop");
-        }, 3000);
-      });
-
-      function sendMessage() {
-        const content = messageInput.value.trim();
-        if (content) {
-          socket.emit("message:send", { content });
-          messageInput.value = "";
-          socket.emit("typing:stop");
+          if (response.ok) {
+            return await response.json();
+          }
+          return null;
+        } catch (error) {
+          console.error("Failed to fetch user info:", error);
+          return null;
         }
       }
 
-      function addMessage(user, content, isHistory = false) {
-        const messageEl = document.createElement("div");
-        messageEl.className = "message" + (isHistory ? " history" : "");
-        messageEl.innerHTML = `
+      /**
+       * Initialize authentication
+       */
+      async function initializeAuth() {
+        const authContainer = document.getElementById("authContainer");
+        const chatContainer = document.getElementById("chatContainer");
+        const userInfoEl = document.getElementById("userInfo");
+
+        // Try to get token from URL or localStorage
+        authToken = getTokenFromUrl();
+
+        if (authToken) {
+          // Verify token by fetching user info
+          const userInfo = await fetchUserInfo(authToken);
+          if (userInfo) {
+            currentUser = userInfo;
+            localStorage.setItem("authToken", authToken);
+
+            // Remove token from URL
+            window.history.replaceState(
+              {},
+              document.title,
+              window.location.pathname
+            );
+
+            // Show chat, hide auth
+            authContainer.classList.remove("show");
+            chatContainer.style.display = "flex";
+            userInfoEl.innerHTML = `
+              <span>${currentUser.email}</span>
+              <a href="/logout" class="logout-btn">Logout</a>
+            `;
+
+            // Initialize chat
+            initializeChat();
+            return;
+          }
+        }
+
+        // No valid token, show login screen
+        authContainer.classList.add("show");
+        chatContainer.style.display = "none";
+      }
+
+      /**
+       * Initialize chat only after authentication
+       */
+      function initializeChat() {
+        // Initialize Socket.IO with token
+        const socket = io({
+          auth: {
+            token: authToken,
+          },
+        });
+
+        const messagesDiv = document.getElementById("messages");
+        const messageInput = document.getElementById("messageInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const currentRoomDisplay = document.getElementById("currentRoom");
+        const userCountDisplay = document.getElementById("userCount");
+        const typingIndicatorDiv = document.getElementById("typingIndicator");
+        const roomBtns = document.querySelectorAll(".room-btn");
+
+        let currentRoom = "general";
+        let typingUsers = new Set();
+        let typingTimeout;
+
+        // Handle socket connection errors
+        socket.on("connect_error", (error) => {
+          console.error("Socket connection error:", error.message);
+          if (error.message.includes("Unauthorized")) {
+            // Token expired or invalid, redirect to login
+            localStorage.removeItem("authToken");
+            window.location.href = "/login";
+          }
+        });
+
+        // Join default room on connect
+        socket.on("connect", () => {
+          socket.emit("room:join", currentRoom);
+        });
+
+        // Handle room join
+        socket.on("room:users", (data) => {
+          messagesDiv.innerHTML = "";
+          typingUsers.clear();
+
+          typingIndicatorDiv.textContent = "";
+          currentRoom = data.roomId;
+          currentRoomDisplay.textContent = currentRoom;
+          userCountDisplay.textContent = data.userCount;
+        });
+
+        // Handle message history
+        socket.on("room:history", (data) => {
+          // Add historical messages to the display
+          if (data.messages && data.messages.length > 0) {
+            data.messages.forEach((message) => {
+              addMessage(message.displayName, message.content, true);
+            });
+          }
+        });
+
+        // Handle user joined
+        socket.on("room:user-joined", (data) => {
+          addSystemMessage(
+            `${data.displayName} joined (${data.userCount} online)`
+          );
+          userCountDisplay.textContent = data.userCount;
+        });
+
+        // Handle user left
+        socket.on("room:user-left", (data) => {
+          addSystemMessage(
+            `${data.displayName} left (${data.userCount} online)`
+          );
+          userCountDisplay.textContent = data.userCount;
+        });
+
+        // Handle new message
+        socket.on("message:new", (message) => {
+          addMessage(message.displayName, message.content);
+          typingUsers.delete(message.userId);
+          updateTypingIndicator();
+        });
+
+        // Handle typing started
+        socket.on("typing:started", (data) => {
+          typingUsers.add(data.userId);
+          updateTypingIndicator();
+        });
+
+        // Handle typing stopped
+        socket.on("typing:stopped", (data) => {
+          typingUsers.delete(data.userId);
+          updateTypingIndicator();
+        });
+
+        // Room button clicks
+        roomBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const roomId = btn.dataset.room;
+            socket.emit("room:leave", currentRoom);
+            socket.emit("room:join", roomId);
+
+            roomBtns.forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+          });
+        });
+
+        // Send message
+        sendBtn.addEventListener("click", sendMessage);
+        messageInput.addEventListener("keypress", (e) => {
+          if (e.key === "Enter") sendMessage();
+        });
+
+        // Typing indicators
+        messageInput.addEventListener("input", () => {
+          socket.emit("typing:start");
+          clearTimeout(typingTimeout);
+          typingTimeout = setTimeout(() => {
+            socket.emit("typing:stop");
+          }, 3000);
+        });
+
+        function sendMessage() {
+          const content = messageInput.value.trim();
+          if (content) {
+            socket.emit("message:send", { content });
+            messageInput.value = "";
+            socket.emit("typing:stop");
+          }
+        }
+
+        function addMessage(user, content, isHistory = false) {
+          const messageEl = document.createElement("div");
+          messageEl.className = "message" + (isHistory ? " history" : "");
+          messageEl.innerHTML = `
           <div class="message-user">${user}</div>
           <div class="message-content">${escapeHtml(content)}</div>
         `;
-        messagesDiv.appendChild(messageEl);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      }
+          messagesDiv.appendChild(messageEl);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
 
-      function addSystemMessage(content) {
-        const messageEl = document.createElement("div");
-        messageEl.className = "message system";
-        messageEl.textContent = content;
-        messagesDiv.appendChild(messageEl);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      }
+        function addSystemMessage(content) {
+          const messageEl = document.createElement("div");
+          messageEl.className = "message system";
+          messageEl.textContent = content;
+          messagesDiv.appendChild(messageEl);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
 
-      function updateTypingIndicator() {
-        if (typingUsers.size > 0) {
-          const users = Array.from(typingUsers).join(", ");
-          typingIndicatorDiv.textContent = `${users} ${
-            typingUsers.size === 1 ? "is" : "are"
-          } typing...`;
-        } else {
-          typingIndicatorDiv.textContent = "";
+        function updateTypingIndicator() {
+          if (typingUsers.size > 0) {
+            const users = Array.from(typingUsers).join(", ");
+            typingIndicatorDiv.textContent = `${users} ${
+              typingUsers.size === 1 ? "is" : "are"
+            } typing...`;
+          } else {
+            typingIndicatorDiv.textContent = "";
+          }
+        }
+
+        function escapeHtml(text) {
+          const div = document.createElement("div");
+          div.textContent = text;
+          return div.innerHTML;
         }
       }
 
-      function escapeHtml(text) {
-        const div = document.createElement("div");
-        div.textContent = text;
-        return div.innerHTML;
-      }
+      // ===== Initialize on Page Load =====
+      document.addEventListener("DOMContentLoaded", initializeAuth);
     </script>
   </body>
 </html>

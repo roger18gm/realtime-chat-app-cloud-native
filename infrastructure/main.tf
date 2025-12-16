@@ -54,8 +54,12 @@ resource "aws_instance" "app" {
   iam_instance_profile = var.use_lab_role ? var.lab_instance_profile_name : aws_iam_instance_profile.app[0].name
 
   user_data = templatefile("${path.module}/userdata.tpl", {
-    docker_image = var.docker_image
-    docker_tag   = var.docker_tag
+    docker_image          = var.docker_image
+    docker_tag            = var.docker_tag
+    cognito_user_pool_id  = aws_cognito_user_pool.main.id
+    cognito_client_id     = aws_cognito_user_pool_client.web.id
+    cognito_domain        = aws_cognito_user_pool_domain.main.domain
+    aws_region            = var.aws_region
   })
 
   user_data_replace_on_change = true
@@ -67,6 +71,9 @@ resource "aws_instance" "app" {
   depends_on = [
     aws_dynamodb_table.chat_rooms,
     aws_dynamodb_table.chat_messages,
+    aws_cognito_user_pool.main,
+    aws_cognito_user_pool_client.web,
+    aws_cognito_user_pool_domain.main,
   ]
 }
 
@@ -168,4 +175,74 @@ resource "aws_dynamodb_table" "chat_messages" {
     Name = "${var.project_name}-messages"
   }
 }
+
+# Cognito User Pool for authentication
+resource "aws_cognito_user_pool" "main" {
+  name = "${var.project_name}-user-pool"
+
+  password_policy {
+    minimum_length    = 8
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  auto_verified_attributes = ["email"]
+
+  schema {
+    name              = "email"
+    attribute_data_type = "String"
+    required          = true
+    mutable           = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-user-pool"
+  }
+}
+
+# Cognito User Pool Client for the web app
+resource "aws_cognito_user_pool_client" "web" {
+  name                = "${var.project_name}-web-client"
+  user_pool_id        = aws_cognito_user_pool.main.id
+  generate_secret     = false
+  explicit_auth_flows = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_PASSWORD_AUTH"]
+
+  allowed_oauth_flows          = ["code"]
+  allowed_oauth_scopes         = ["email", "openid", "profile"]
+  allowed_oauth_flows_user_pool_client = true
+
+  # Callback URLs: localhost for dev, EC2 public IP for production
+  callback_urls = [
+    "http://localhost:8080/",
+    "http://localhost:3000/",
+    "http://${aws_instance.app.public_ip}/",
+    "http://${aws_instance.app.public_dns}/"
+  ]
+
+  logout_urls = [
+    "http://localhost:8080/",
+    "http://localhost:3000/",
+    "http://${aws_instance.app.public_ip}/",
+    "http://${aws_instance.app.public_dns}/"
+  ]
+
+  supported_identity_providers = ["COGNITO"]
+
+  depends_on = [
+    aws_cognito_user_pool_domain.main,
+    aws_instance.app
+  ]
+}
+
+# Cognito Domain for Hosted UI
+resource "aws_cognito_user_pool_domain" "main" {
+  domain       = "${var.project_name}-${data.aws_caller_identity.current.account_id}"
+  user_pool_id = aws_cognito_user_pool.main.id
+}
+
+# Data source to get current AWS account ID
+data "aws_caller_identity" "current" {}
+
 

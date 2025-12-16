@@ -247,6 +247,9 @@ data "aws_caller_identity" "current" {}
 
 # Update Cognito client callback URLs with instance details after EC2 is created
 # This is done via local-exec to avoid circular dependency
+# Note: Cognito requires HTTPS for all non-localhost URLs, so we use http:// for localhost only
+# In production, the EC2 instance should be behind an ALB/CloudFront with SSL certificate
+# For now, we register localhost and the EC2 DNS name (HTTP only, since Cognito allows localhost)
 resource "null_resource" "update_cognito_callbacks" {
   depends_on = [aws_instance.app, aws_cognito_user_pool_client.web]
 
@@ -259,13 +262,11 @@ resource "null_resource" "update_cognito_callbacks" {
           http://localhost:8080 \
           http://localhost:3000 \
           http://localhost \
-          http://${aws_instance.app.public_ip} \
           http://${aws_instance.app.public_dns} \
         --logout-urls \
           http://localhost:8080 \
           http://localhost:3000 \
           http://localhost \
-          http://${aws_instance.app.public_ip} \
           http://${aws_instance.app.public_dns} \
         --region ${var.aws_region}
     EOT

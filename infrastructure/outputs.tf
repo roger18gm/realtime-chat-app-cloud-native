@@ -31,10 +31,12 @@ output "cognito_hosted_ui_url" {
 }
 
 output "cognito_callback_urls_for_production" {
-  description = "Add these callback URLs to your Cognito client after deployment for production access"
+  description = "Cognito callback URLs registered for your deployment (updated post-deployment via AWS CLI). Use the DNS name to access the app in production."
   value = [
-    "http://${aws_instance.app.public_ip}/",
-    "http://${aws_instance.app.public_dns}/"
+    "http://localhost:8080 (local development)",
+    "http://localhost:3000 (local development)",
+    "http://localhost (local development)",
+    "http://${aws_instance.app.public_dns}/ (production - uses EC2 DNS name)"
   ]
 }
 

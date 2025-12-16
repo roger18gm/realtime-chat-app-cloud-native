@@ -214,26 +214,23 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
 
   # Callback URLs: localhost for dev, EC2 public IP for production
+  # Note: When deployed to EC2, these URLs are populated dynamically by the app
+  # using request.host, so hardcoding the instance IP here isn't necessary
   callback_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://${aws_instance.app.public_ip}/",
-    "http://${aws_instance.app.public_dns}/"
+    "http://localhost/"
   ]
 
   logout_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://${aws_instance.app.public_ip}/",
-    "http://${aws_instance.app.public_dns}/"
+    "http://localhost/"
   ]
 
   supported_identity_providers = ["COGNITO"]
 
-  depends_on = [
-    aws_cognito_user_pool_domain.main,
-    aws_instance.app
-  ]
+  depends_on = [aws_cognito_user_pool_domain.main]
 }
 
 # Cognito Domain for Hosted UI

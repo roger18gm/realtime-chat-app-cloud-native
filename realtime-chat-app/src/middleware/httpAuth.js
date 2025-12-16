@@ -1,17 +1,8 @@
-const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 
 /**
- * Socket authentication middleware
- * Enforces JWT tokens from Cognito
- * 
- * If ENFORCE_AUTH is true:
- *   - Token is required
- *   - Token is verified against Cognito public keys
- *   - User info extracted from token
- * 
- * If ENFORCE_AUTH is false (development):
- *   - Guest connections allowed
+ * HTTP authentication middleware
+ * Enforces JWT tokens from Cognito for protected routes
  */
 
 const ENFORCE_AUTH = process.env.ENFORCE_AUTH === "true";
@@ -86,55 +77,42 @@ async function verifyToken(token) {
 }
 
 /**
- * Socket.IO authentication middleware
+ * Express middleware for JWT validation
+ * Extracts token from Authorization header
  */
-async function authenticateSocket(socket, next) {
+const requireAuth = async (req, res, next) => {
     try {
-        const token = socket.handshake.auth.token;
+        const authHeader = req.headers.authorization;
 
-        if (!token) {
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
             if (ENFORCE_AUTH) {
-                return next(new Error("Unauthorized: No token provided"));
+                return res.status(401).json({ error: "Unauthorized: Missing or invalid Authorization header" });
             }
-            // Guest mode (development only)
-            socket.userId = generateGuestId();
-            socket.isGuest = true;
-            socket.email = null;
-            console.log(`Guest connected: ${socket.userId}`);
+            // Continue without auth in development
+            req.user = null;
             return next();
         }
 
-        // Verify token
+        const token = authHeader.substring(7); // Remove "Bearer " prefix
         const payload = await verifyToken(token);
 
-        socket.userId = payload.sub; // Cognito subject (unique user ID)
-        socket.email = payload.email;
-        socket.isGuest = false;
-        console.log(`Authenticated user connected: ${socket.email} (${socket.userId})`);
+        req.user = {
+            userId: payload.sub,
+            email: payload.email,
+        };
         next();
     } catch (error) {
         if (ENFORCE_AUTH) {
-            console.warn(`Socket auth failed: ${error.message}`);
-            next(new Error(`Unauthorized: ${error.message}`));
-        } else {
-            // Fallback to guest in development
-            socket.userId = generateGuestId();
-            socket.isGuest = true;
-            socket.email = null;
-            console.warn(`Auth error in guest mode: ${error.message}`);
-            next();
+            console.warn(`HTTP auth failed: ${error.message}`);
+            return res.status(401).json({ error: `Unauthorized: ${error.message}` });
         }
+        // Continue without auth in development
+        req.user = null;
+        next();
     }
-}
-
-/**
- * Generate a unique guest ID
- */
-function generateGuestId() {
-    return `guest_${crypto.randomBytes(8).toString("hex")}`;
-}
+};
 
 module.exports = {
-    authenticateSocket,
+    requireAuth,
     ENFORCE_AUTH,
 };

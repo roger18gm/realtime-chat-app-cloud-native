@@ -11,10 +11,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.0"
-    }
   }
 }
 
@@ -34,8 +30,35 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_security_group" "web" {
   name        = "${var.project_name}-sg"
-  description = "Allow HTTP"
+  description = "Allow HTTP and HTTPS"
 
+  # HTTP from ALB
+  ingress {
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  # Egress
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-app-sg"
+  }
+}
+
+# Security group for ALB
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-alb-sg"
+  description = "Allow HTTP and HTTPS to ALB"
+
+  # HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -43,13 +66,128 @@ resource "aws_security_group" "web" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # HTTPS
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Egress
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Name = "${var.project_name}-alb-sg"
+  }
 }
+
+# ACM Certificate for HTTPS (self-signed validation for demo)
+resource "aws_acm_certificate" "app" {
+  domain_name       = "*.${var.domain_name}"
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-cert"
+  }
+}
+
+# ALB
+resource "aws_lb" "app" {
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = data.aws_subnets.default.ids
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "${var.project_name}-alb"
+  }
+}
+
+# Target group for ALB
+resource "aws_lb_target_group" "app" {
+  name        = "${var.project_name}-tg"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = data.aws_vpc.default.id
+  target_type = "instance"
+
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 3
+    interval            = 30
+    path                = "/health"
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "${var.project_name}-tg"
+  }
+}
+
+# ALB Listener for HTTP (redirect to HTTPS)
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# ALB Listener for HTTPS
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate.app.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+}
+
+# Register EC2 instance with target group
+resource "aws_lb_target_group_attachment" "app" {
+  target_group_arn = aws_lb_target_group.app.arn
+  target_id        = aws_instance.app.id
+  port             = 8080
+}
+
+# Data sources for VPC/subnets
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
 
 resource "aws_instance" "app" {
   ami           = data.aws_ami.ubuntu.id
@@ -216,24 +354,28 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_scopes         = ["email", "openid", "profile"]
   allowed_oauth_flows_user_pool_client = true
 
-  # Callback URLs: localhost for development only
-  # In production, the app dynamically uses request.host to construct the correct redirect URI
-  # This matches the app's getBaseUrl(req) function which returns the actual accessed host
+  # Callback URLs: localhost for development, ALB HTTPS for production
+  # The app's getBaseUrl(req) function dynamically constructs redirect URIs
   callback_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/"
+    "http://localhost/",
+    "https://${aws_lb.app.dns_name}/"
   ]
 
   logout_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/"
+    "http://localhost/",
+    "https://${aws_lb.app.dns_name}/"
   ]
 
   supported_identity_providers = ["COGNITO"]
 
-  depends_on = [aws_cognito_user_pool_domain.main]
+  depends_on = [
+    aws_cognito_user_pool_domain.main,
+    aws_lb.app
+  ]
 }
 
 # Cognito Domain for Hosted UI
@@ -244,33 +386,5 @@ resource "aws_cognito_user_pool_domain" "main" {
 
 # Data source to get current AWS account ID
 data "aws_caller_identity" "current" {}
-
-# Update Cognito client callback URLs with instance details after EC2 is created
-# This is done via local-exec to avoid circular dependency
-# Note: Cognito requires HTTPS for all non-localhost URLs, so we use http:// for localhost only
-# In production, the EC2 instance should be behind an ALB/CloudFront with SSL certificate
-# For now, we register localhost and the EC2 DNS name (HTTP only, since Cognito allows localhost)
-resource "null_resource" "update_cognito_callbacks" {
-  depends_on = [aws_instance.app, aws_cognito_user_pool_client.web]
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws cognito-idp update-user-pool-client \
-        --user-pool-id ${aws_cognito_user_pool.main.id} \
-        --client-id ${aws_cognito_user_pool_client.web.id} \
-        --callback-urls \
-          http://localhost:8080 \
-          http://localhost:3000 \
-          http://localhost \
-          http://${aws_instance.app.public_dns} \
-        --logout-urls \
-          http://localhost:8080 \
-          http://localhost:3000 \
-          http://localhost \
-          http://${aws_instance.app.public_dns} \
-        --region ${var.aws_region}
-    EOT
-  }
-}
 
 

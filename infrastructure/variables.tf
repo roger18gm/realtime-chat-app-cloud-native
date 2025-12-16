@@ -31,3 +31,9 @@ variable "lab_instance_profile_name" {
   type        = string
   default     = "LabInstanceProfile"
 }
+
+variable "domain_name" {
+  description = "Domain name for SSL certificate (e.g., example.com). Will use wildcard *.domain_name"
+  type        = string
+  default     = "realtime-chat-app.local"
+}

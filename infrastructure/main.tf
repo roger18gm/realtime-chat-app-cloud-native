@@ -11,6 +11,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 
@@ -87,17 +91,40 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# ACM Certificate for HTTPS (self-signed validation for demo)
-resource "aws_acm_certificate" "app" {
-  domain_name       = "*.${var.domain_name}"
-  validation_method = "DNS"
+# Self-signed TLS certificate for ALB HTTPS (for lab/dev environment)
+# For production, replace with ACM certificate with real domain
+resource "tls_private_key" "app" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
 
-  lifecycle {
-    create_before_destroy = true
+resource "tls_self_signed_cert" "app" {
+  private_key_pem = tls_private_key.app.private_key_pem
+
+  subject {
+    common_name  = var.domain_name
+    organization = "Lab Environment"
   }
+
+  validity_period_hours = 8760 # 1 year
+
+  allowed_uses = [
+    "key_encipherment",
+    "digital_signature",
+    "server_auth",
+  ]
+}
+
+resource "aws_acm_certificate" "app" {
+  private_key      = tls_private_key.app.private_key_pem
+  certificate_body = tls_self_signed_cert.app.cert_pem
 
   tags = {
     Name = "${var.project_name}-cert"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 

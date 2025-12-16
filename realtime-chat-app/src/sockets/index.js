@@ -7,6 +7,7 @@ const {
     getUsersInRoom,
     getUserCountInRoom,
 } = require("../services/roomService.js");
+const { saveMessage, getMessageHistory } = require("../services/dynamoDbService.js");
 
 let sharedText = ""; // state all clients share
 
@@ -51,6 +52,13 @@ function setupSockets(server) {
                     userCount: usersInRoom.length,
                 });
 
+                // Fetch and send message history
+                const messageHistory = await getMessageHistory(roomId);
+                socket.emit("room:history", {
+                    roomId,
+                    messages: messageHistory,
+                });
+
                 // Notify others in room
                 socket.to(roomId).emit("room:user-joined", {
                     userId: socket.userId,
@@ -84,7 +92,7 @@ function setupSockets(server) {
         });
 
         // Handle message:send event
-        socket.on("message:send", (data) => {
+        socket.on("message:send", async (data) => {
             if (socket.currentRoom) {
                 const message = {
                     userId: socket.userId,
@@ -93,6 +101,17 @@ function setupSockets(server) {
                     timestamp: Date.now(),
                 };
 
+                // Save message to DynamoDB (non-blocking, fire-and-forget)
+                saveMessage(
+                    socket.currentRoom,
+                    message.userId,
+                    message.displayName,
+                    message.content
+                ).catch((error) => {
+                    console.warn(`Failed to persist message: ${error.message}`);
+                });
+
+                // Broadcast immediately (don't wait for DynamoDB)
                 io.to(socket.currentRoom).emit("message:new", message);
                 console.log(`Message in room ${socket.currentRoom}: ${data.content}`);
             }

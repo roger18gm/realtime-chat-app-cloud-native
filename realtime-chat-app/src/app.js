@@ -18,11 +18,12 @@ const COGNITO_REGION = process.env.COGNITO_REGION || "us-west-2";
 
 /**
  * Get the base URL from the request
- * Handles both localhost and EC2 public IP/DNS
+ * Handles both localhost and ALB (respects X-Forwarded-Proto header)
  */
 function getBaseUrl(req) {
-    const protocol = req.protocol || "http";
-    const host = req.get("host") || "localhost:8080";
+    // Check X-Forwarded-Proto header (set by ALB)
+    let protocol = req.get("X-Forwarded-Proto") || req.protocol || "http";
+    let host = req.get("host") || "localhost:8080";
     return `${protocol}://${host}/`;
 }
 

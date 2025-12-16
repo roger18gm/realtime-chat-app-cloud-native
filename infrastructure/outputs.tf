@@ -30,3 +30,16 @@ output "cognito_hosted_ui_url" {
   value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&redirect_uri=http://localhost:8080/"
 }
 
+output "cognito_callback_urls_for_production" {
+  description = "Add these callback URLs to your Cognito client after deployment for production access"
+  value = [
+    "http://${aws_instance.app.public_ip}/",
+    "http://${aws_instance.app.public_dns}/"
+  ]
+}
+
+output "app_url" {
+  description = "Access your app at this URL"
+  value = "http://${aws_instance.app.public_dns}/"
+}
+

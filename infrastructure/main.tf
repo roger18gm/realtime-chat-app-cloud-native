@@ -11,6 +11,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -212,30 +216,24 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_scopes         = ["email", "openid", "profile"]
   allowed_oauth_flows_user_pool_client = true
 
-  # Callback URLs: localhost for dev, EC2 instance URL for production
-  # The app uses request.host to dynamically match redirect URIs
+  # Callback URLs: localhost for development only
+  # In production, the app dynamically uses request.host to construct the correct redirect URI
+  # This matches the app's getBaseUrl(req) function which returns the actual accessed host
   callback_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/",
-    "http://${aws_instance.app.public_ip}/",
-    "http://${aws_instance.app.public_dns}/"
+    "http://localhost/"
   ]
 
   logout_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/",
-    "http://${aws_instance.app.public_ip}/",
-    "http://${aws_instance.app.public_dns}/"
+    "http://localhost/"
   ]
 
   supported_identity_providers = ["COGNITO"]
 
-  depends_on = [
-    aws_cognito_user_pool_domain.main,
-    aws_instance.app
-  ]
+  depends_on = [aws_cognito_user_pool_domain.main]
 }
 
 # Cognito Domain for Hosted UI
@@ -246,5 +244,16 @@ resource "aws_cognito_user_pool_domain" "main" {
 
 # Data source to get current AWS account ID
 data "aws_caller_identity" "current" {}
+
+# Update Cognito client callback URLs with instance details after EC2 is created
+# This is done via local-exec to avoid circular dependency
+resource "null_resource" "update_cognito_callbacks" {
+  depends_on = [aws_instance.app, aws_cognito_user_pool_client.web]
+
+  provisioner "local-exec" {
+    command = "aws cognito-idp update-user-pool-client --user-pool-id ${aws_cognito_user_pool.main.id} --client-id ${aws_cognito_user_pool_client.web.id} --callback-urls http://localhost:8080 http://localhost:3000 http://localhost http://${aws_instance.app.public_ip} http://${aws_instance.app.public_dns} --logout-urls http://localhost:8080 http://localhost:3000 http://localhost http://${aws_instance.app.public_ip} http://${aws_instance.app.public_dns} --region ${var.aws_region}"
+    interpreter = ["PowerShell", "-Command"]
+  }
+}
 
 

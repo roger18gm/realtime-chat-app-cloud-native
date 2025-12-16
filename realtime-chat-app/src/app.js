@@ -55,10 +55,39 @@ app.get("/callback", async (req, res) => {
         return res.status(400).send("Missing authorization code");
     }
 
-    // For now, just redirect to home with code as token (client will use this)
-    // In a production app, you would exchange the code for tokens on the backend
-    // For this simplified flow, we let the client handle the token exchange
-    res.redirect(`/?token=${encodeURIComponent(code)}`);
+    try {
+        // Exchange authorization code for tokens with Cognito
+        const baseUrl = getBaseUrl(req);
+        const tokenUrl = `https://${COGNITO_DOMAIN}.auth.${COGNITO_REGION}.amazoncognito.com/oauth2/token`;
+
+        const tokenResponse = await fetch(tokenUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+                grant_type: "authorization_code",
+                client_id: COGNITO_CLIENT_ID,
+                code: code,
+                redirect_uri: new URL("/callback", baseUrl).toString(),
+            }).toString(),
+        });
+
+        if (!tokenResponse.ok) {
+            const errorData = await tokenResponse.json();
+            console.error("Token exchange failed:", errorData);
+            return res.status(400).send(`Token exchange failed: ${errorData.error_description || errorData.error}`);
+        }
+
+        const tokenData = await tokenResponse.json();
+        const idToken = tokenData.id_token;
+
+        // Redirect to home with ID token
+        res.redirect(`/?token=${encodeURIComponent(idToken)}`);
+    } catch (error) {
+        console.error("Callback error:", error);
+        res.status(500).send("Authentication failed");
+    }
 });
 
 // Cognito logout endpoint

@@ -382,12 +382,12 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
 
   # Callback URLs: localhost for development, ALB HTTPS for production
-  # The app's getBaseUrl(req) function dynamically constructs redirect URIs
+  # The /callback endpoint receives the authorization code and redirects to home with token
   callback_urls = [
-    "http://localhost:8080/",
-    "http://localhost:3000/",
-    "http://localhost/",
-    "https://${aws_lb.app.dns_name}/"
+    "http://localhost:8080/callback",
+    "http://localhost:3000/callback",
+    "http://localhost/callback",
+    "https://${aws_lb.app.dns_name}/callback"
   ]
 
   logout_urls = [

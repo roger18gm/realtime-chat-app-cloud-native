@@ -72,7 +72,6 @@ resource "aws_instance" "app" {
     aws_dynamodb_table.chat_rooms,
     aws_dynamodb_table.chat_messages,
     aws_cognito_user_pool.main,
-    aws_cognito_user_pool_client.web,
     aws_cognito_user_pool_domain.main,
   ]
 }
@@ -213,24 +212,30 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_scopes         = ["email", "openid", "profile"]
   allowed_oauth_flows_user_pool_client = true
 
-  # Callback URLs: localhost for dev, EC2 public IP for production
-  # Note: When deployed to EC2, these URLs are populated dynamically by the app
-  # using request.host, so hardcoding the instance IP here isn't necessary
+  # Callback URLs: localhost for dev, EC2 instance URL for production
+  # The app uses request.host to dynamically match redirect URIs
   callback_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/"
+    "http://localhost/",
+    "http://${aws_instance.app.public_ip}/",
+    "http://${aws_instance.app.public_dns}/"
   ]
 
   logout_urls = [
     "http://localhost:8080/",
     "http://localhost:3000/",
-    "http://localhost/"
+    "http://localhost/",
+    "http://${aws_instance.app.public_ip}/",
+    "http://${aws_instance.app.public_dns}/"
   ]
 
   supported_identity_providers = ["COGNITO"]
 
-  depends_on = [aws_cognito_user_pool_domain.main]
+  depends_on = [
+    aws_cognito_user_pool_domain.main,
+    aws_instance.app
+  ]
 }
 
 # Cognito Domain for Hosted UI

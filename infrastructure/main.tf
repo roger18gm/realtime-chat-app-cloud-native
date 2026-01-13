@@ -1,6 +1,7 @@
 terraform {
+  # Terraform state bucket should exist and match terraform-state directory
   backend "s3" {
-    bucket         = "itm350-realtime-chat-app-tf-state"
+    bucket         = "itm350-realtime-chat-app-tf-state-roger-jan"
     key            = "realtime-chat-app/terraform.tfstate"
     region         = "us-west-2"
     use_lockfile   = true

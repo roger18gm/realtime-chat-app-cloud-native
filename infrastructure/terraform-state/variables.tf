@@ -9,7 +9,7 @@ variable "aws_region" {
 variable "state_bucket_name" {
   description = "Name of the S3 bucket for Terraform state"
   type        = string
-  default     = "itm350-realtime-chat-app-tf-state-roger-jan"
+  default     = "itm350-realtime-chat-app-tf-state-galan-jan"
 }
 
 variable "enable_versioning" {
